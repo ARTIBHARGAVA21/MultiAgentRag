@@ -1,78 +1,124 @@
 import os
 import shutil
+import uuid
 
-from fastapi import APIRouter, UploadFile, File
+from fastapi import (
+    APIRouter,
+    UploadFile,
+    File,
+    HTTPException
+)
+
 from pydantic import BaseModel
 
 from ingestions import process_document
-from vectorstores.chromadb import search_chroma
+from retrieval import retrieve_context
 
 
 router = APIRouter()
 
-
-# Temporary PDF directory
 UPLOAD_DIR = "temp"
-
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Upload API
+
+class AskRequest(BaseModel):
+    question: str
+    document_id: str
+
+
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...)
+):
+
+    # Check file extension
     if not file.filename.lower().endswith(".pdf"):
-        return {
-            "error": "Only PDF files are allowed"
-        }
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are allowed"
+        )
+
+    document_id = str(uuid.uuid4())
+
     file_path = os.path.join(
         UPLOAD_DIR,
-        file.filename
+        f"{document_id}_{file.filename}"
     )
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(
-            file.file,
-            buffer
+
+    # Save PDF
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save PDF: {str(e)}"
         )
-    result = process_document(file_path)
+
+    # Check file size
+    file_size = os.path.getsize(file_path)
+
+    if file_size == 0:
+        os.remove(file_path)
+
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded PDF is empty"
+        )
+
+    # Process PDF
+    try:
+        result = process_document(
+            file_path=file_path,
+            document_id=document_id
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not read/process PDF: {str(e)}"
+        )
+
     return {
+        "message": "PDF uploaded successfully",
         "filename": file.filename,
-        "message": "PDF processed successfully",
+        "document_id": document_id,
+        "file_size": file_size,
         "result": result
     }
 
 
-# Ask Request
-class AskRequest(BaseModel):
-    question: str
-    top_k: int = 4
-
-# Ask API
 @router.post("/ask")
-async def ask_question(request: AskRequest):
-    documents = search_chroma(
-        request.question,
-        k=request.top_k
+async def ask_question(
+    request: AskRequest
+):
+
+    result = retrieve_context(
+        query=request.question,
+        document_id=request.document_id,
+        top_k=4
     )
+
+    documents = result["documents"]
 
     if not documents:
-
         return {
-            "answer": "Not found in document",
-            "sources": []
+            "question": request.question,
+            "answer": "Information not found in the uploaded document.",
+            "context": []
         }
-    sources = []
-    for doc in documents:
-        sources.append({
-            "content": doc.page_content,
-            "metadata": doc.metadata
+
+    context = []
+
+    for document in documents:
+        context.append({
+            "content": document.page_content,
+            "metadata": document.metadata
         })
-    # For now return retrieved chunks.
-    # LLM generation can be added next.
-    context = "\n\n".join(
-        doc.page_content
-        for doc in documents
-    )
+
     return {
         "question": request.question,
-        "context": context,
-        "sources": sources
+        "transformed_query": result["transformed_query"],
+        "context": context
     }
