@@ -18,10 +18,11 @@ class UnsupportedFileTypeError(Exception):
     pass
 
 
-
+# ------------------------------------------------------------------
 # SUPPORTED FILE TYPES
 #
 # ext   -> loader class + kwargs
+# ------------------------------------------------------------------
 
 _LOADERS = {
     "pdf": {

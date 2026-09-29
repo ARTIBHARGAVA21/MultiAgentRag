@@ -12,12 +12,13 @@ from langchain_huggingface import (
 from prompts import RAG_PROMPT
 
 
-
+# ---------------------------------------------------------
 # LLM CONFIGURATION
 #
 # Generation runs on the HuggingFace Inference API (cloud).
 # The embedding model runs locally, so no token is needed
 # for retrieval - only the LLM requires this key.
+# ---------------------------------------------------------
 
 HF_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
@@ -52,8 +53,10 @@ def _build_llm() -> ChatHuggingFace:
 llm = _build_llm()
 
 
-
+# ---------------------------------------------------------
 # 1. PROMPT ASSEMBLY
+# ---------------------------------------------------------
+
 def build_context(
     documents: List[Document]
 ) -> str:
@@ -81,11 +84,15 @@ def build_context(
     )
 
 
-
+# ---------------------------------------------------------
 # 2. RAG CHAIN
+# ---------------------------------------------------------
+
 prompt = ChatPromptTemplate.from_template(
     RAG_PROMPT
 )
+
+
 rag_chain = (
     {
         "context": lambda x: x["context"],
@@ -97,8 +104,10 @@ rag_chain = (
 )
 
 
-
+# ---------------------------------------------------------
 # 3. STREAMING RESPONSE
+# ---------------------------------------------------------
+
 def _is_rate_limit_error(
     error: Exception
 ) -> bool:

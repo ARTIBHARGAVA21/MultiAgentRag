@@ -16,8 +16,8 @@ try:
         messages=[{"role": "user", "content": "Say hello in one sentence."}],
         max_tokens=128,
     )
-    print("API SUCCESS")
+    print("✅ API SUCCESS")
     print(response.choices[0].message.content)
 except Exception as e:
-    print("API FAILED")
+    print("❌ API FAILED")
     print(e)

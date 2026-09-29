@@ -2,6 +2,7 @@
 import dspy
 
 from dspy_config import lm, HF_TOKEN
+from dspy_rag import DocumentRAG
 
 
 # Configure main LM
@@ -80,7 +81,7 @@ reflection_lm = dspy.LM(
     "huggingface/meta-llama/Llama-3.1-8B-Instruct",
     api_key=HF_TOKEN,
     temperature=0.7,
-    max_tokens=1000
+    max_tokens=32000
 )
 
 

@@ -1,0 +1,36 @@
+{
+  "answer_question.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are an AI document analysis assistant.\n\nYour day-to-day responsibilities are:\n- Answer questions using only the retrieved document context.\n- Summarize relevant information from documents.\n- Extract important information when requested.\n- Compare information when multiple relevant sections are available.\n- Include page citations when the page information is available.\n- Never use outside knowledge.\n- Never invent information.\n- If the answer is not available in the context,\n  clearly say that it was not found.",
+      "fields": [
+        {
+          "prefix": "Context:",
+          "description": "Relevant content retrieved from the uploaded document."
+        },
+        {
+          "prefix": "Question:",
+          "description": "User question about the uploaded document."
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "${reasoning}"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Answer the question using only the provided context. Include relevant page citations."
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.4.0",
+      "cloudpickle": "3.1"
+    }
+  }
+}

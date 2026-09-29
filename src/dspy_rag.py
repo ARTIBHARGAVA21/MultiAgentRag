@@ -39,7 +39,7 @@ class DocumentRAG(dspy.Module):
     def __init__(self):
         super().__init__()
 
-        self.answer_question = dspy.Predict(
+        self.answer_question = dspy.ChainOfThought(
             DocumentQA
         )
 
