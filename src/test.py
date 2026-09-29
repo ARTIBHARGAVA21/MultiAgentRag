@@ -1,25 +1,23 @@
 import os
-
 from dotenv import load_dotenv
-from mistralai.client import Mistral
+from huggingface_hub import InferenceClient
 
+load_dotenv(".env")
+api_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
-load_dotenv(".env", override=True)
-
-api_key = os.getenv("MISTRAL_API_KEY")
-
-print("Key exists:", bool(api_key))
-print("Key length:", len(api_key) if api_key else 0)
-
-
-client = Mistral(
-    api_key=api_key
+client = InferenceClient(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    provider="novita",  # or "auto"
+    token=api_key,
 )
 
-response = client.embeddings.create(
-    model="mistral-embed",
-    inputs=["Hello world"]
-)
-
-print("SUCCESS")
-print("Embedding length:", len(response.data[0].embedding))
+try:
+    response = client.chat.completions.create(
+        messages=[{"role": "user", "content": "Say hello in one sentence."}],
+        max_tokens=128,
+    )
+    print("API SUCCESS")
+    print(response.choices[0].message.content)
+except Exception as e:
+    print("API FAILED")
+    print(e)

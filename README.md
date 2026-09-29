@@ -2,7 +2,7 @@
 
 A FastAPI-based **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask questions based only on the uploaded document.
 
-The system uses **Mistral embeddings, ChromaDB, hybrid retrieval, BM25 keyword search, CrossEncoder reranking, and Mistral LLM generation with streaming responses**.
+The system uses **HuggingFace embeddings (all-MiniLM-L6-v2, running locally), ChromaDB, hybrid retrieval, BM25 keyword search, CrossEncoder reranking, and a HuggingFace LLM for generation with streaming responses**.
 
 ---
 
@@ -15,7 +15,7 @@ The system uses **Mistral embeddings, ChromaDB, hybrid retrieval, BM25 keyword s
   - Character Chunking
   - Token Chunking
   - Semantic Chunking
-- Generate embeddings using Mistral
+- Generate embeddings using HuggingFace (all-MiniLM-L6-v2, runs locally)
 - Store document chunks in ChromaDB
 - Document-specific retrieval using `document_id`
 - Hybrid retrieval
@@ -56,10 +56,11 @@ The system uses **Mistral embeddings, ChromaDB, hybrid retrieval, BM25 keyword s
                     └──────────┬──────────┘
                                │
                                ▼
-                    ┌─────────────────────┐
-                    │ Mistral Embeddings  │
-                    │    mistral-embed    │
-                    └──────────┬──────────┘
+                     ┌─────────────────────┐
+                     │ HuggingFace         │
+                     │  Embeddings         │
+                     │ all-MiniLM-L6-v2    │
+                     └──────────┬──────────┘
                                │
                                ▼
                     ┌─────────────────────┐
@@ -99,7 +100,7 @@ Question
            │
            ▼
 ┌─────────────────────┐
-│   Mistral LLM       │
+│   HuggingFace LLM   │
 │     Generation      │
 └──────────┬──────────┘
            │
@@ -150,7 +151,8 @@ Rag_document_Project/
 | FastAPI | REST API |
 | PyPDFLoader | PDF text extraction |
 | LangChain | RAG pipeline |
-| Mistral AI | Embeddings and LLM |
+| HuggingFace / sentence-transformers | Local embeddings (all-MiniLM-L6-v2) |
+| HuggingFace Inference API | LLM generation |
 | ChromaDB | Vector database |
 | BM25 | Keyword-based retrieval |
 | Sentence Transformers | CrossEncoder reranking |
@@ -193,13 +195,27 @@ pip install -r requirements.txt
 Create a `.env` file inside the `src` folder:
 
 ```env
-MISTRAL_API_KEY=your_mistral_api_key
+HUGGINGFACEHUB_API_TOKEN=your_huggingface_token
 ```
 
-The application uses this key for:
+Create a token at:
 
-- Mistral embeddings
-- Mistral LLM generation
+```text
+https://huggingface.co/settings/tokens
+```
+
+The token is used for:
+
+- HuggingFace LLM generation (via the Inference API)
+
+The embedding model (`all-MiniLM-L6-v2`) runs locally using
+`sentence-transformers`, so it does **not** require a token or internet access.
+
+Optional overrides:
+
+```env
+HF_LLM_REPO=meta-llama/Llama-3.1-8B-Instruct
+```
 
 ---
 
@@ -307,7 +323,7 @@ The user question is cleaned and prepared for retrieval.
 
 ### 2. Vector Search
 
-The question is converted into an embedding using Mistral embeddings.
+The question is converted into an embedding using HuggingFace embeddings.
 
 ChromaDB searches for semantically similar document chunks.
 
@@ -339,7 +355,6 @@ The retrieved candidates are passed to a CrossEncoder:
 ```text
 cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
-
 The CrossEncoder scores the relevance between:
 
 ```text
@@ -373,10 +388,10 @@ The prompt also contains instructions that the model should answer only from the
 The application uses:
 
 ```text
-Mistral Small
+meta-llama/Llama-3.1-8B-Instruct
 ```
 
-for answer generation.
+for answer generation, served through the HuggingFace Inference API.
 
 The temperature is configured as:
 
@@ -458,7 +473,7 @@ Rerank Documents
    ↓
 Build Prompt
    ↓
-LLM
+HuggingFace LLM
    ↓
 Token/Chunk
    ↓
@@ -501,9 +516,7 @@ The API returns a user-friendly error instead of exposing the complete internal 
 
 ### Mistral rate limit
 
-If the Mistral API returns HTTP `429`, the generation layer retries with exponential backoff.
-
-After the retry limit is reached, the API returns a temporary rate-limit message.
+If the HuggingFace API returns HTTP `429`, the generation layer reports a rate-limit message to the client.
 
 ---
 
@@ -608,15 +621,15 @@ Information not found in the uploaded document.
 
 ```text
 PDF
- ↓
+  ↓
 PyPDFLoader
- ↓
+  ↓
 Text Extraction
- ↓
+  ↓
 Chunking
- ↓
-Mistral Embeddings
- ↓
+  ↓
+HuggingFace Embeddings
+  ↓
 ChromaDB
 ```
 
@@ -638,11 +651,11 @@ CrossEncoder Reranking
 Top Documents
  ↓
 Prompt Assembly
- ↓
-Mistral LLM
- ↓
+  ↓
+HuggingFace LLM
+  ↓
 Citations & Guardrails
- ↓
+  ↓
 Streaming Response
 ```
 
@@ -655,9 +668,10 @@ Streaming Response
 - Semantic chunking is currently stored in ChromaDB.
 - The other chunking strategies are currently generated for comparison/measurement.
 - ChromaDB data is persisted in the `chroma_db` directory.
-- The CrossEncoder model may be downloaded the first time it is used.
-- A valid Mistral API key is required for embeddings and LLM generation.
-- API rate limits can affect both embedding and generation requests.
+- The CrossEncoder and embedding models may be downloaded the first time they are used.
+- The embedding model (`all-MiniLM-L6-v2`) runs locally and needs no token.
+- A valid HuggingFace token is required only for LLM generation.
+- API rate limits can affect generation requests.
 
 ---
 

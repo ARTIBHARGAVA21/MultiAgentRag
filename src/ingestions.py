@@ -1,6 +1,4 @@
 
-from langchain_community.document_loaders import PyPDFLoader
-
 from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
     CharacterTextSplitter,
@@ -9,6 +7,7 @@ from langchain_text_splitters import (
 
 from langchain_experimental.text_splitter import SemanticChunker
 
+from loaders import load_document
 from vectorstores.chromadb import (
     embedding_model,
     store_in_chroma,
@@ -16,9 +15,8 @@ from vectorstores.chromadb import (
 
 
 def process_document(file_path: str, document_id: str):
-    # 1. LOAD PDF
-    loader = PyPDFLoader(file_path)
-    documents = loader.load()
+    # 1. LOAD DOCUMENT (PDF, DOCX, TXT, MD, CSV, JSON, HTML, XLSX)
+    documents = load_document(file_path)
     # 2. ADD DOCUMENT ID
     for document in documents:
         document.metadata["document_id"] = document_id
@@ -54,14 +52,23 @@ def process_document(file_path: str, document_id: str):
     for chunk in token_chunks:
         chunk.metadata["chunking_strategy"] = "token"
     # 6. SEMANTIC CHUNKING
+    #
+    # Only meaningful for prose. Non-prose formats
+    # (CSV, JSON, XLSX) are already split into rows,
+    # so they fall back to recursive chunking.
     semantic_splitter = SemanticChunker(
         embedding_model,
         breakpoint_threshold_type="percentile",
         breakpoint_threshold_amount=95
     )
-    semantic_chunks = semantic_splitter.split_documents(
-        documents
-    )
+    try:
+        semantic_chunks = semantic_splitter.split_documents(
+            documents
+        )
+        if not semantic_chunks:
+            semantic_chunks = recursive_chunks
+    except Exception:
+        semantic_chunks = recursive_chunks
     for chunk in semantic_chunks:
         chunk.metadata["chunking_strategy"] = "semantic"
     # 7. STORE SEMANTIC CHUNKS

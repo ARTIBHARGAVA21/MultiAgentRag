@@ -1,91 +1,112 @@
+
 import os
 import shutil
 import uuid
-from fastapi import (APIRouter,UploadFile,File,HTTPException)
+
+from fastapi import (
+    APIRouter,
+    UploadFile,
+    File,
+    HTTPException
+)
+
 from fastapi.responses import StreamingResponse
+
 from pydantic import BaseModel
+
 from ingestions import process_document
+from loaders import (
+    supported_extensions,
+    UnsupportedFileTypeError
+)
 from retrieval import retrieve_context
-from generation import (generate_answer,stream_answer)
+from generation import stream_answer
 
 
 router = APIRouter()
 
 
-
-# UPLOAD DIRECTORY
 UPLOAD_DIR = "temp"
 
-os.makedirs(UPLOAD_DIR,exist_ok=True)
+os.makedirs(
+    UPLOAD_DIR,
+    exist_ok=True
+)
 
 
-
-# REQUEST MODEL
 class AskRequest(BaseModel):
+
     question: str
+
     document_id: str
-    stream: bool = False
 
 
-
-# UPLOAD PDF
 @router.post("/upload")
-async def upload_pdf(
+async def upload_document(
     file: UploadFile = File(...)
 ):
-    # CHECK FILE
-    if not file.filename:
+
+    extension = (
+        file.filename.rsplit(".", 1)[-1].lower()
+        if file.filename and "." in file.filename
+        else ""
+    )
+
+    allowed = supported_extensions() + ["xlsx"]
+
+    if extension not in allowed:
 
         raise HTTPException(
             status_code=400,
-            detail="Filename is missing"
+            detail=(
+                f"Unsupported file type: .{extension or 'unknown'}. "
+                f"Allowed types are: {', '.join(sorted(allowed))}"
+            )
         )
-    # CHECK EXTENSION
-    if not file.filename.lower().endswith(".pdf"):
 
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF files are allowed"
-        )
-    # CREATE DOCUMENT ID
     document_id = str(
         uuid.uuid4()
     )
+
     file_path = os.path.join(
         UPLOAD_DIR,
         f"{document_id}_{file.filename}"
     )
-    # SAVE PDF
+
     try:
-        with open(file_path,"wb") as buffer:
-            shutil.copyfileobj(file.file,buffer)
+
+        with open(
+            file_path,
+            "wb"
+        ) as buffer:
+
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
+
     except Exception as e:
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to save PDF: {str(e)}"
+            detail=f"Failed to save document: {str(e)}"
         )
 
-    # CHECK FILE SIZE
-    try:
-        file_size = os.path.getsize(
-            file_path
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Could not check file size: {str(e)}"
-        )
+    file_size = os.path.getsize(
+        file_path
+    )
+
     if file_size == 0:
 
         os.remove(
             file_path
         )
+
         raise HTTPException(
             status_code=400,
-            detail="Uploaded PDF is empty"
+            detail="Uploaded document is empty"
         )
-    # PROCESS PDF
+
     try:
 
         result = process_document(
@@ -93,112 +114,66 @@ async def upload_pdf(
             document_id=document_id
         )
 
-    except Exception as e:
-        # Delete failed upload
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    except UnsupportedFileTypeError as e:
+
         raise HTTPException(
             status_code=400,
-            detail=f"Could not read/process PDF: {str(e)}"
+            detail=str(e)
         )
-    # RESPONSE
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Could not read/process document: {str(e)}"
+            )
+        )
+
     return {
-        "message":"PDF uploaded successfully",
-        "filename":file.filename,
-        "document_id":document_id,
-        "file_size":file_size,
-        "result":result
+        "message": "Document uploaded successfully",
+        "filename": file.filename,
+        "document_id": document_id,
+        "file_size": file_size,
+        "result": result
     }
 
 
-# ASK QUESTION
 @router.post("/ask")
 async def ask_question(
     request: AskRequest
 ):
-    # VALIDATE QUESTION
-    if not request.question.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Question cannot be empty"
-        )
-    # RETRIEVAL
-    try:
 
-        result = retrieve_context(
-            query=request.question,
-            document_id=request.document_id,
-            top_k=4
-        )
+    result = retrieve_context(
+        query=request.question,
+        document_id=request.document_id,
+        top_k=4
+    )
 
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Retrieval failed: {str(e)}"
-        )
     documents = result["documents"]
-    # NO DOCUMENT FOUND
+
     if not documents:
-        return {
 
-            "question":
-                request.question,
+        async def not_found():
 
-            "transformed_query":
-                result["transformed_query"],
-
-            "answer":
-                "Information not found in the uploaded document.",
-
-            "context":
-                []
-        }
-    # STREAMING RESPONSE
-    if request.stream:
+            yield (
+                "Information not found in "
+                "the uploaded document."
+            )
 
         return StreamingResponse(
-
-            stream_answer(
-                question=request.question,
-                documents=documents
-            ),
-
-            media_type="text/plain",
-
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive"
-            }
+            not_found(),
+            media_type="text/plain"
         )
-    # LLM GENERATION
-    answer = await generate_answer(
-        question=request.question,
-        documents=documents
+
+    return StreamingResponse(
+        stream_answer(
+            question=request.question,
+            documents=documents
+        ),
+        media_type="text/plain",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
     )
-    # BUILD CONTEXT RESPONSE
-    context = []
-    for document in documents:
-
-        page_number = document.metadata.get(
-            "page",
-            "unknown"
-        )
-
-        if isinstance(page_number, int):
-
-            page_number += 1
-        context.append({
-
-            "content":document.page_content,
-            "page":page_number,
-            "metadata":document.metadata
-        })
-
-    # FINAL RESPONSE
-    return {
-        "question":request.question,
-        "transformed_query": result["transformed_query"],
-        "answer":answer,
-        "context":context
-    }
